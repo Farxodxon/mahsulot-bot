@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+*.db
+*.log
+start_bot.bat
+.env
