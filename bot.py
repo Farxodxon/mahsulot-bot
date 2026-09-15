@@ -198,6 +198,16 @@ async def cb_choose_category(update: Update, context: ContextTypes.DEFAULT_TYPE)
     cat_index = int(query.data.split(":")[1])
     context.user_data["category_index"] = cat_index
     cat_name = PRODUCT_CATEGORIES[cat_index]["name"]
+    items = PRODUCT_CATEGORIES[cat_index]["items"]
+
+    if len(items) == 1:
+        context.user_data["variant"] = items[0]
+        await _next_step(
+            query,
+            f"Tanlandi: {short_category_name(cat_name)} — {items[0]}\n\n"
+            "Kim chiqargan? (ism kiriting)",
+        )
+        return ASK_WORKER
 
     await _next_step(
         query,
