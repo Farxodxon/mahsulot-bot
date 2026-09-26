@@ -152,7 +152,7 @@ Baza `config.DB_PATH` — project papkasidagi `mahsulot_bot.db`. Render'da fayl 
 ---
 
 ## Suhbat ssenariysi (konversatsiya holatlari)
-7 holat — `(ASK_NAME, CHOOSING_CATEGORY, CHOOSING_VARIANT, ASK_WORKER, ENTERING_QTY, ASK_NOTES, ENTERING_NOTES_TEXT) = range(7)`.
+6 holat — `(ASK_NAME, CHOOSING_CATEGORY, CHOOSING_VARIANT, ASK_WORKER, ENTERING_QTY, ENTERING_NOTES_TEXT) = range(6)`.
 
 Oqim:
 1. `/start` — ism saqlanmagan bo'lsa → `ASK_NAME` (ismni so'raydi, `workers` ga saqlaydi). Saqlangan bo'lsa — darhol bosh menyu.
@@ -162,8 +162,8 @@ Oqim:
    - Aks holda → `CHOOSING_VARIANT` — rang/variantlar. **8 tadan** sahifalanadi; `⬅️ Oldingi` / `Keyingi ➡️` va `⬅️ Kategoriyalar` tugmalari.
 4. Variant tanlandi → `ASK_WORKER` — "Kim chiqargan? (ism kiriting)" — erkin matn.
 5. Ism kiritildi → `ENTERING_QTY` — "Palletda nechta bor?" — musbat butun son talab qilinadi.
-6. Miqdor kiritildi → `ASK_NOTES` — `notes:skip` yoki `notes:write`.
-7. Izoh skip yoki tekst → saqlanadi, «✅ Saqlandi!» xabari + quyidagi tugmalar: `🖨 Ushbu pallet uchun PDF`, `➕ Yana shu mahsulotdan qo'shish`, `🆕 Boshqa mahsulot`, `🏠 Bosh menyu`.
+6. Miqdor kiritildi → `ENTERING_NOTES_TEXT` — **"Izohni yozing:"** (izoh MAJBURIY — bo'sh qoldirilsa yana so'raladi).
+7. Izoh yozildi → saqlanadi, «✅ Saqlandi!» xabari + quyidagi tugmalar: `🖨 Ushbu pallet uchun PDF`, `➕ Yana shu mahsulotdan qo'shish`, `🆕 Boshqa mahsulot`, `🏠 Bosh menyu`.
 
 Barcha callback tugmalari to'liq ro'yxati:
 | callback | vazifa |
@@ -179,8 +179,6 @@ Barcha callback tugmalari to'liq ro'yxati:
 | `var:<index>` | variantni tanlash (sahifadagi ID — global, sahifaga bog'liq emas) |
 | `vpage:<page>` | variantlar sahifasini almashtirish |
 | `back:cat` | variantlar → kategoriyalar |
-| `notes:skip` | izohsiz, saqlash |
-| `notes:write` | izoh yozish |
 | `pdf:<record_id>` | bitta yozuv PDF |
 | `quick_add` | xuddi shu mahsulotdan yana — faqat son so'raydi |
 | `menu:main` | bosh menyu |
@@ -224,7 +222,7 @@ Yangi mahsulot qo'shish: `PRODUCT_CATEGORIES` ga oddiy dict qo'shing va `vbos`(v
   1. **Kategoriya** — qalin 22 pt, ko'p qatordan (to'liq nom qisqartiriladi).
   2. **Rang/variant** — qalin 30 pt.
   3. Yonma-yon 2 ta kichik quti: **Sana** (%d.%m.%Y) va **Kim chiqargan** — 16 mm balandlikda, label 8 pt kulrang, qiymat 15 pt.
-  4. **Izoh** — Sana/Ism dan SONI qutigacha bo'lgan butun joyni egallaydi (avtofit: shrift 10–32 pt oralig'ida, matn sig'adigan eng katta shrift tanlanadi, vertikal qilib markazi bo'yicha joylashtiramiz).
+  4. **Izoh** — Sana/Ism dan SONI qutigacha bo'lgan butun joyni egallaydi. Matn label ostidan (vertikal markazlashsiz) boshlanadi. Avtofit: shrift 10–32 pt oralig'ida qatorlar soniga qarab kichraytiriladi — qatorlar soni aynan fpdf'ning o'zi (`multi_cell(dry_run=True)` bilan, Bold shrift hisobga olinib) sanaladi, shunda matn hech qachon katakdan chiqmaydi.
   5. **SONI qutisi** — sahifa eng pastida (30 mm balandlikda), `SONI` labeli tepada, jildan 38 pt qalin markazda `NN K`.
 - `build_record_pdf(record)` — bitta sahifa.
 - `build_pallet_pages_pdf(records)` — ko'p sahifa; ko'p sahifa bo'lsa har sahifa yuqorisida `1 / 5` kabi raqam.

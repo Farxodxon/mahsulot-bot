@@ -50,9 +50,8 @@ VARIANTS_PER_PAGE = 8
     CHOOSING_VARIANT,
     ASK_WORKER,
     ENTERING_QTY,
-    ASK_NOTES,
     ENTERING_NOTES_TEXT,
-) = range(7)
+) = range(6)
 
 
 # =======================================================================
@@ -98,15 +97,6 @@ def variant_keyboard(cat_index: int, page: int) -> InlineKeyboardMarkup:
 
     rows.append([InlineKeyboardButton("⬅️ Kategoriyalar", callback_data="back:cat")])
     return InlineKeyboardMarkup(rows)
-
-
-def notes_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        [
-            [InlineKeyboardButton("Yo'q, izohsiz", callback_data="notes:skip")],
-            [InlineKeyboardButton("✍️ Izoh yozaman", callback_data="notes:write")],
-        ]
-    )
 
 
 def after_save_keyboard(record_id: int) -> InlineKeyboardMarkup:
@@ -268,27 +258,15 @@ async def receive_quantity(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         await update.message.reply_text("Iltimos, musbat butun son kiriting (masalan: 48):")
         return ENTERING_QTY
     context.user_data["quantity"] = int(text)
-    await update.message.reply_text("Izoh qo'shasizmi?", reply_markup=notes_keyboard())
-    return ASK_NOTES
-
-
-async def cb_notes_skip(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    query = update.callback_query
-    await query.answer()
-    await _delete_clicked(query)
-    return await _save_and_reply(update, context, notes="")
-
-
-async def cb_notes_write(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    query = update.callback_query
-    await query.answer()
-    await _delete_clicked(query)
-    await query.message.reply_text("Izohni yozing:")
+    await update.message.reply_text("Izohni yozing:")
     return ENTERING_NOTES_TEXT
 
 
 async def receive_notes_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     notes = update.message.text.strip()
+    if not notes:
+        await update.message.reply_text("Izoh bo'sh bo'lmasligi kerak. Izohni yozing:")
+        return ENTERING_NOTES_TEXT
     return await _save_and_reply(update, context, notes=notes)
 
 
@@ -485,10 +463,6 @@ def build_application() -> Application:
             ],
             ASK_WORKER: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_worker)],
             ENTERING_QTY: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_quantity)],
-            ASK_NOTES: [
-                CallbackQueryHandler(cb_notes_skip, pattern="^notes:skip$"),
-                CallbackQueryHandler(cb_notes_write, pattern="^notes:write$"),
-            ],
             ENTERING_NOTES_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_notes_text)],
         },
         fallbacks=[

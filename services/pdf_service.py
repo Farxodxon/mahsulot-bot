@@ -11,6 +11,7 @@ from datetime import datetime
 from io import BytesIO
 
 from fpdf import FPDF
+from fpdf.enums import MethodReturnValue
 
 from utils.product_name_utils import short_category_name
 
@@ -32,27 +33,32 @@ def _new_pdf() -> FPDF:
     return pdf
 
 
-def _estimate_lines(pdf: FPDF, text: str, size: int, width: float) -> int:
-    pdf.set_font("DejaVu", "", size)
-    words = text.split()
-    if not words:
-        return 1
-    lines = 1
-    line = ""
-    for word in words:
-        trial = (line + " " + word).strip()
-        if pdf.get_string_width(trial) <= width:
-            line = trial
-        else:
-            lines += 1
-            line = word
-    return lines
+def _count_lines(pdf: FPDF, text: str, size: int, width: float, style: str = "B") -> int:
+    """fpdf multi_cell qanday bo'lgan bo'lsa, aynan o'sha qatorlar sonini hisoblaydi
+    (uzun so'zlar, yangi qatorlar va so'z oralig'ini ham inobatga olib).
+    Chizish paytidagi shrift uslubi (odatda Bold) bilan bir xil ishlatilishi shart."""
+    pdf.set_font("DejaVu", style, size)
+    lines = pdf.multi_cell(
+        w=width,
+        text=text,
+        dry_run=True,
+        output=MethodReturnValue.LINES,
+    )
+    return len(lines)
 
 
-def _fit_font_size(pdf: FPDF, text: str, width: float, available_h: float, min_size: int, max_size: int) -> int:
+def _fit_font_size(
+    pdf: FPDF,
+    text: str,
+    width: float,
+    available_h: float,
+    min_size: int,
+    max_size: int,
+    style: str = "B",
+) -> int:
     for size in range(max_size, min_size - 1, -1):
-        lines = _estimate_lines(pdf, text, size, width)
-        if lines * (size * 0.46) <= available_h:
+        lines = _count_lines(pdf, text, size, width, style)
+        if lines * size * 0.46 <= available_h:
             return size
     return min_size
 
@@ -80,8 +86,6 @@ def _field_box(
     if auto_fit:
         value_size = _fit_font_size(pdf, value, w - 6, h - 9.5, 10, value_size)
         text_h = value_size * 0.46
-        lines = _estimate_lines(pdf, value, value_size, w - 6)
-        start_y = y + 7.5 + max(0.0, (h - 9.5 - lines * text_h) / 2)
     pdf.set_xy(x + 3, start_y)
     pdf.set_text_color(0, 0, 0)
     pdf.set_font("DejaVu", "B", value_size)
