@@ -136,6 +136,22 @@ def get_user_records(telegram_id: int, limit: int = 2000) -> list[sqlite3.Row]:
         ).fetchall()
 
 
+def get_batch_records(telegram_id: int, category: str, variant: str, worker: str) -> list[sqlite3.Row]:
+    """Bir 'partiya' — shu foydalanuvchining shu mahsulot, shu rang va shu ishchi
+    tomonidan AYNAN shu kunda qo'shilgan barcha palletlari («Yana qo'shish» bilan
+    to'plangan yozuvlar bitta PDF da chiqishi uchun)."""
+    today_str = date.today().isoformat()
+    with _connect() as conn:
+        return conn.execute(
+            """
+            SELECT * FROM records
+            WHERE telegram_id = ? AND category = ? AND variant = ? AND worker = ? AND date LIKE ?
+            ORDER BY id
+            """,
+            (telegram_id, category, variant, worker, f"{today_str}%"),
+        ).fetchall()
+
+
 def get_records_by_worker_today(telegram_id: int) -> list[sqlite3.Row]:
     """Shu foydalanuvchining bugungi barcha yozuvlari — 'Jamlab PDF' uchun."""
     return get_today_records(telegram_id)

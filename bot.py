@@ -334,12 +334,29 @@ async def cb_pdf_single(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         await _delete_clicked(query)
         await chat.send_message("Yozuv topilmadi.")
         return
-    pdf_bytes = build_record_pdf(rows[0])
+    record = rows[0]
+    # «Yana shu mahsulotdan qo'shish» bilan to'plangan ayni partiyaning barcha
+    # palletlari bitta PDF ichida chiqadi (oxirgi qo'shilgan ham kirmasdan qolmaydi).
+    batch = db.get_batch_records(
+        update.effective_user.id,
+        record["category"],
+        record["variant"],
+        record["worker"],
+    )
+    if len(batch) == 1:
+        pdf_bytes = build_record_pdf(batch[0])
+        filename = f"pallet_{batch[0]['id']}.pdf"
+        caption = "Pallet hujjati"
+    else:
+        pdf_bytes = build_pallet_pages_pdf(list(batch))
+        total_qty = sum(r["quantity"] for r in batch)
+        filename = f"palletlar_{batch[0]['id']}_{batch[-1]['id']}.pdf"
+        caption = f"Partiya palletlari ({len(batch)} ta, jami {total_qty} K)"
     await _delete_clicked(query)
     await chat.send_document(
         document=pdf_bytes,
-        filename=f"pallet_{record_id}.pdf",
-        caption="Pallet hujjati",
+        filename=filename,
+        caption=caption,
     )
 
 
