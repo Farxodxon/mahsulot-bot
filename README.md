@@ -144,6 +144,8 @@ Sana `date.today().isoformat()` bilan kunning boshlanishiga solishtiriladi (`dat
 - `get_today_records(telegram_id)` → faqat bugungi, yangilikni birinchi (id DESC)
 - `get_all_records(limit=2000)` → hammasi
 - `get_user_records(telegram_id, limit=2000)` → faqat shu foydalanuvchining yozuvlari (eksport uchun)
+- `get_batch_records(telegram_id, category, variant, worker)` → bir partiya: shu mahsulot+rang+ishchining o'sha kundagi barcha palletlari («Yana qo'shish» bilan to'planganlar bitta PDF'da chiqishi uchun)
+- `get_frequent_notes(telegram_id, limit=5)` → eng ko'p yozilgan izohlar (taklif tugmalari uchun), sotib: ishlatish soni kamayish tartibida, teng bo'lsa — oxirgi ishlatilgan
 - `get_records_by_worker_today(telegram_id)` → `get_today_records` aliasi
 - `delete_record(record_id)` → o'chirish
 
@@ -162,8 +164,8 @@ Oqim:
    - Aks holda → `CHOOSING_VARIANT` — rang/variantlar. **8 tadan** sahifalanadi; `⬅️ Oldingi` / `Keyingi ➡️` va `⬅️ Kategoriyalar` tugmalari.
 4. Variant tanlandi → `ASK_WORKER` — "Kim chiqargan? (ism kiriting)" — erkin matn.
 5. Ism kiritildi → `ENTERING_QTY` — "Palletda nechta bor?" — musbat butun son talab qilinadi.
-6. Miqdor kiritildi → `ENTERING_NOTES_TEXT` — **"Izohni yozing:"** (izoh MAJBURIY — bo'sh qoldirilsa yana so'raladi).
-7. Izoh yozildi → saqlanadi, «✅ Saqlandi!» xabari + quyidagi tugmalar: `🖨 Ushbu pallet uchun PDF`, `➕ Yana shu mahsulotdan qo'shish`, `🆕 Boshqa mahsulot`, `🏠 Bosh menyu`.
+6. Miqdor kiritildi → `ENTERING_NOTES_TEXT` — **"Izohni tanlang (yoki o'zingiz yozing):"** — foydalanuvchining eng ko'p yozgan 5 ta izohi tugma sifatida taklif qilinadi (`note_pick`). Izoh **MAJBURIY** — bo'sh qoldirilsa yana so'raladi.
+7. Izoh tanlandi yoki yozildi → saqlanadi, «✅ Saqlandi!» xabari + quyidagi tugmalar: `🖨 Ushbu pallet uchun PDF`, `➕ Yana shu mahsulotdan qo'shish`, `🆕 Boshqa mahsulot`, `🏠 Bosh menyu`.
 
 Barcha callback tugmalari to'liq ro'yxati:
 | callback | vazifa |
@@ -179,7 +181,8 @@ Barcha callback tugmalari to'liq ro'yxati:
 | `var:<index>` | variantni tanlash (sahifadagi ID — global, sahifaga bog'liq emas) |
 | `vpage:<page>` | variantlar sahifasini almashtirish |
 | `back:cat` | variantlar → kategoriyalar |
-| `pdf:<record_id>` | bitta yozuv PDF |
+| `pdf:<record_id>` | bitta yozuv PDF — lekin shu partiya (mahsulot+rang+ishchi, shu kun) bo'yicha barcha yozuvlar bitta PDF ichida chiqadi |
+| `note_pick:<index>` | eng ko'p yozilgan izohlardan birini tanlab, to'g'ridan-to'g'ri saqlash |
 | `quick_add` | xuddi shu mahsulotdan yana — faqat son so'raydi |
 | `menu:main` | bosh menyu |
 

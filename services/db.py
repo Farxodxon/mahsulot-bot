@@ -136,6 +136,23 @@ def get_user_records(telegram_id: int, limit: int = 2000) -> list[sqlite3.Row]:
         ).fetchall()
 
 
+def get_frequent_notes(telegram_id: int, limit: int = 5) -> list[sqlite3.Row]:
+    """Shu foydalanuvchining eng ko'p yozgan izohlari (taklif tugmalari uchun).
+    Eng ko'p qo'llanganidan kamayish tartibida; teng bo'lsa — eng oxirgi ishlatilgan."""
+    with _connect() as conn:
+        return conn.execute(
+            """
+            SELECT notes, COUNT(*) AS cnt
+            FROM records
+            WHERE telegram_id = ? AND TRIM(notes) <> ''
+            GROUP BY notes
+            ORDER BY cnt DESC, MAX(date) DESC
+            LIMIT ?
+            """,
+            (telegram_id, limit),
+        ).fetchall()
+
+
 def get_batch_records(telegram_id: int, category: str, variant: str, worker: str) -> list[sqlite3.Row]:
     """Bir 'partiya' — shu foydalanuvchining shu mahsulot, shu rang va shu ishchi
     tomonidan AYNAN shu kunda qo'shilgan barcha palletlari («Yana qo'shish» bilan

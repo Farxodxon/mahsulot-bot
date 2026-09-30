@@ -99,6 +99,14 @@ def variant_keyboard(cat_index: int, page: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
+def notes_suggest_keyboard(suggestions: list[str]) -> InlineKeyboardMarkup:
+    rows = []
+    for i, note in enumerate(suggestions):
+        label = note if len(note) <= 32 else note[:31] + "…"
+        rows.append([InlineKeyboardButton(label, callback_data=f"note_pick:{i}")])
+    return InlineKeyboardMarkup(rows)
+
+
 def after_save_keyboard(record_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
@@ -258,8 +266,28 @@ async def receive_quantity(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         await update.message.reply_text("Iltimos, musbat butun son kiriting (masalan: 48):")
         return ENTERING_QTY
     context.user_data["quantity"] = int(text)
-    await update.message.reply_text("Izohni yozing:")
+    suggestions = db.get_frequent_notes(update.effective_user.id, limit=5)
+    context.user_data["note_suggestions"] = [row["notes"] for row in suggestions]
+    if suggestions:
+        await update.message.reply_text(
+            "Izohni tanlang (yoki o'zingiz yozing):",
+            reply_markup=notes_suggest_keyboard(context.user_data["note_suggestions"]),
+        )
+    else:
+        await update.message.reply_text("Izohni yozing:")
     return ENTERING_NOTES_TEXT
+
+
+async def cb_note_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    idx = int(query.data.split(":")[1])
+    suggestions = context.user_data.get("note_suggestions") or []
+    if idx < 0 or idx >= len(suggestions):
+        await _next_step(query, "Izohni yozing:")
+        return ENTERING_NOTES_TEXT
+    await _delete_clicked(query)
+    return await _save_and_reply(update, context, notes=suggestions[idx])
 
 
 async def receive_notes_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -480,7 +508,10 @@ def build_application() -> Application:
             ],
             ASK_WORKER: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_worker)],
             ENTERING_QTY: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_quantity)],
-            ENTERING_NOTES_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_notes_text)],
+            ENTERING_NOTES_TEXT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, receive_notes_text),
+                CallbackQueryHandler(cb_note_pick, pattern=r"^note_pick:\d+$"),
+            ],
         },
         fallbacks=[
             CommandHandler("cancel", cmd_cancel),
