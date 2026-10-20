@@ -17,6 +17,8 @@ import logging
 import os
 from datetime import datetime
 
+import aiohttp
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.ext import (
@@ -486,7 +488,13 @@ async def cb_export_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 # =======================================================================
 def build_application() -> Application:
     db.init_db()
-    app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    app = (
+        Application.builder()
+        .token(TELEGRAM_BOT_TOKEN)
+        .post_init(_post_init)
+        .post_shutdown(_post_shutdown)
+        .build()
+    )
 
     conv = ConversationHandler(
         entry_points=[
@@ -539,6 +547,49 @@ def _setup_event_loop() -> None:
         asyncio.get_event_loop()
     except RuntimeError:
         asyncio.set_event_loop(asyncio.new_event_loop())
+
+
+# =======================================================================
+# Keep-alive: Render free tier uxlamasligi uchun har 5 daqiqada
+# o'z xizmatiga HTTP so'rov yuborib turadi
+# =======================================================================
+KEEPALIVE_INTERVAL = int(os.environ.get("KEEPALIVE_INTERVAL", "300"))
+_keepalive_task: asyncio.Task | None = None
+
+
+async def _keepalive_loop(url: str) -> None:
+    while True:
+        await asyncio.sleep(KEEPALIVE_INTERVAL)
+        try:
+            timeout = aiohttp.ClientTimeout(total=15)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(url) as resp:
+                    logger.info("Keep-alive %s -> HTTP %s", url, resp.status)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.warning("Keep-alive xatosi (%s): %r", url, exc)
+
+
+async def _post_init(app: Application) -> None:
+    global _keepalive_task
+    webhook_url = os.environ.get("WEBHOOK_URL", "").strip()
+    if not webhook_url:
+        return
+    if os.environ.get("KEEPALIVE_DISABLED", "").strip() == "1":
+        logger.info("Keep-alive o'chirilgan (KEEPALIVE_DISABLED=1).")
+        return
+    _keepalive_task = asyncio.create_task(_keepalive_loop(webhook_url))
+    logger.info("Keep-alive ishga tushdi: har %s soniyada %s", KEEPALIVE_INTERVAL, webhook_url)
+
+
+async def _post_shutdown(app: Application) -> None:
+    if _keepalive_task is not None and not _keepalive_task.done():
+        _keepalive_task.cancel()
+        try:
+            await _keepalive_task
+        except asyncio.CancelledError:
+            pass
 
 
 def main():
