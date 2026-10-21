@@ -14,7 +14,7 @@ Har bir yozuv uchun **oq-qora printerga mos katta harfli A5 PDF hujjat** chiqari
 ## Texnologiyalar va versiyalar (EXACT)
 | Komponent | Versiya/Joylashuvi |
 |---|---|
-| Python | 3.14.7 (manzil: `C:\Users\Farxod3376\AppData\Local\Programs\Python\Python314\python.exe`) |
+| Python | 3.14.8 (manzil: `C:\Python314\python.exe`) |
 | python-telegram-bot | 21.6 |
 | aiohttp | 3.14.3 (webhook uchun) |
 | fpdf2 | 2.7.9 (PDF yaratish) |
@@ -70,14 +70,14 @@ mahsulot_bot/
 ## O'rnatish va ishga tushirish (lokal)
 1. Bog'liqliklarni o'rnatish:
 ```
-"C:\Users\Farxod3376\AppData\Local\Programs\Python\Python314\python.exe" -m pip install -r requirements.txt
+C:\Python314\python.exe -m pip install -r requirements.txt
 ```
 2. Token bilan ishga tushirish (2 usul):
    - Ikki marta `start_bot.bat` ni bosish (token skriptda).
    - Yoki PowerShell/Prompt da:
      ```
      set TELEGRAM_BOT_TOKEN=<BOTFATHER_TOKEN>
-     "C:\Users\Farxod3376\AppData\Local\Programs\Python\Python314\python.exe" bot.py
+      C:\Python314\python.exe bot.py
      ```
 3. Bot telefonda ishlaydi (polling rejimida — Telegram serveriga hech qanday port ochish shart emas).
 

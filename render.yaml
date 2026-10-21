@@ -1,0 +1,24 @@
+# Render.com Blueprint — botni bir tugma bilan deploy qilish uchun.
+# Render dashboard'ga ulanadi: New -> Blueprint -> bu repozitoriyani tanlang.
+#
+# TELEGRAM_BOT_TOKEN hech qachon git'ga yozilmaydi: `sync: false` — uni
+# Render dashboard'ga qo'lda kiritish kerak (Environment -> Add Environment Variable).
+services:
+  - type: web
+    name: mahsulot-bot
+    runtime: python
+    plan: free
+    region: frankfurt
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
+    autoDeploy: true
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: WEBHOOK_URL
+        value: https://mahsulot-bot.onrender.com
+      - key: WEBHOOK_PATH
+        value: /webhook
+      # Render free tier 15 daqiqa faollikdan keyin uxlaydi — keep-alive yoqmaydi
+      - key: KEEPALIVE_INTERVAL
+        value: "300"
