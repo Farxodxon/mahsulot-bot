@@ -76,7 +76,7 @@ mahsulot_bot/
    - Ikki marta `start_bot.bat` ni bosish (token skriptda).
    - Yoki PowerShell/Prompt da:
      ```
-     set TELEGRAM_BOT_TOKEN=8105048800:AAHsBRh7DCHPA-Gpbiyzzd9M6DwkU6TWuUE
+     set TELEGRAM_BOT_TOKEN=<BOTFATHER_TOKEN>
      "C:\Users\Farxod3376\AppData\Local\Programs\Python\Python314\python.exe" bot.py
      ```
 3. Bot telefonda ishlaydi (polling rejimida — Telegram serveriga hech qanday port ochish shart emas).
@@ -99,7 +99,7 @@ Bir vaqtning o'zida **faqat BIRTA** bot jarayoni ishlashi mumkin. Ikkita ishga t
   (env o'rnatilmagan bo'lsa `KeyError` chiqadi — token qo'rmasdan bot ishga tushmasi mumkin emasligini kafolatlaydi.)
 - Lokal: token `start_bot.bat` da — va bu fayl `.gitignore` ga kiritilgan.
 - GitHub (Render) uchun: token Render sozlamalarida env var sifatida o'rnatiladi.
-- Hozirgi token: `8105048800:AAHsBRh7DCHPA-Gpbiyzzd9M6DwkU6TWuUE` (uchinchi shaxslarga yubormang; sir saqlansa-ku, BotFather dan qayta generatsiya qilinishi mumkin).
+- Hozirgi token README'da saqlanmaydi (faqat o'rnini bosib qo'yish uchun). U BotFather'dan olingan bo'lishi kerak; sirni saqlash kerak bo'lsa — BotFather dan qayta generatsiya qilinishi mumkin.
 
 `.gitignore` mazmuni:
 ```
@@ -283,7 +283,7 @@ if webhook_url:
 4. Start: `python bot.py`
 5. Free tier.
 6. Env var:
-   - `TELEGRAM_BOT_TOKEN=8105048800:AAHsBRh7DCHPA-Gpbiyzzd9M6DwkU6TWuUE`
+   - `TELEGRAM_BOT_TOKEN=<BOTFATHER_TOKEN>`
    - `WEBHOOK_URL=https://<servis-nomi>.onrender.com`
 7. Deploy.
 
