@@ -735,6 +735,12 @@ def build_application(webhook_mode: bool = False) -> Application:
         .token(config.TELEGRAM_BOT_TOKEN)
         .post_init(_post_init)
         .post_shutdown(_post_shutdown)
+        # Telegram API'ga ulanish vaqti kechikkan bo'lsa — timeout beriladi.
+        # PTB standart read_timeout = 5 s, bu ba'zi vaqtlarda yetarli emas.
+        .connect_timeout(30)
+        .read_timeout(30)
+        .write_timeout(30)
+        .pool_timeout(30)
     )
     if webhook_mode:
         # Webhook rejimida o'z serverimiz ishlaydi — PTB'ning updater'i kerak emas.
@@ -854,10 +860,14 @@ def _webhook_secret() -> str:
     return hashlib.sha256(config.TELEGRAM_BOT_TOKEN.encode("utf-8")).hexdigest()
 
 
-async def _set_webhook_with_retry(app: Application, webhook_url: str, secret: str) -> None:
-    """Webhook'ni o'rnatadi (Telegram vaqtincha javob bermasa — qayta urinadi)."""
-    last_exc: Exception | None = None
-    for attempt in range(1, 4):
+async def _set_webhook_with_retry(
+    app: Application, webhook_url: str, secret: str, attempts: int = 3
+) -> bool:
+    """Webhook'ni o'rnatadi (Telegram vaqtincha javob bermasa — qayta urinadi).
+
+    Qaytaradi: `True` — webhook o'rnatildi, `False` — urinishlar tugadi.
+    """
+    for attempt in range(1, attempts + 1):
         try:
             await app.bot.set_webhook(
                 url=webhook_url,
@@ -866,14 +876,64 @@ async def _set_webhook_with_retry(app: Application, webhook_url: str, secret: st
                 drop_pending_updates=False,
             )
             logger.info("Webhook o'rnatildi: %s", webhook_url)
+            return True
+        except (TelegramError, OSError) as exc:
+            logger.warning(
+                "Webhook o'rnatilmadi (urinish %s/%s): %r", attempt, attempts, exc
+            )
+            if attempt < attempts:
+                await asyncio.sleep(10)
+    return False
+
+
+async def _webhook_supervisor(
+    app: Application, webhook_url: str, secret: str, interval: int = 60
+) -> None:
+    """Webhook o'rnatilmagan bo'lsa — doimiy ravishda qayta urinish.
+
+    Telegram API vaqtincha ishlamasa, bot o'chib qolmasligi kerak:
+    server yana uxlab turadi va keyin webhook qayta o'rnatiladi.
+    """
+    while True:
+        try:
+            if await _set_webhook_with_retry(app, webhook_url, secret, attempts=1):
+                return
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Webhook supervisor xatosi: %r", exc)
+        await asyncio.sleep(interval)
+
+
+async def _initialize_with_retry(app: Application, attempts: int = 5) -> None:
+    """`app.initialize()` + `post_init` — tarmoq xatolarida qayta urinadi.
+
+    Telegram API vaqtincha javob bermasa (yoki bazaga ulanish kechiksa),
+    bot darhol o'lmaydi — bir necha daqiqa ichida qayta urinadi.
+    """
+    delay = 5.0
+    last_exc: Exception | None = None
+    initialized = False
+    for attempt in range(1, attempts + 1):
+        try:
+            if not initialized:
+                await app.initialize()
+                initialized = True
+            if app.post_init:
+                await app.post_init(app)
             return
-        except TelegramError as exc:
+        except Exception as exc:  # noqa: BLE001
             last_exc = exc
             logger.warning(
-                "Webhook o'rnatilmadi (urinish %s/3): %r", attempt, exc
+                "Boshlashda xatolik (urinish %s/%s): %r — %s soniya kutib qayta uriniladi",
+                attempt,
+                attempts,
+                exc,
+                delay,
             )
-            await asyncio.sleep(10)
-    raise RuntimeError(f"Webhook o'rnatib bo'lmadi: {last_exc!r}")
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, 30)
+    raise RuntimeError(f"Botni ishga tushirib bo'lmadi: {last_exc!r}")
 
 
 async def _run_webhook_mode() -> None:
@@ -911,16 +971,21 @@ async def _run_webhook_mode() -> None:
             except (ValueError, OSError):
                 pass
 
-    await app.initialize()
-    if app.post_init:
-        await app.post_init(app)
+    await _initialize_with_retry(app)
     await server.start()
     await app.start()
 
     webhook_url = f"{base_url}{config.WEBHOOK_PATH}"
-    await _set_webhook_with_retry(app, webhook_url, secret)
+    global _keepalive_task, _webhook_task
 
-    global _keepalive_task
+    if not await _set_webhook_with_retry(app, webhook_url, secret):
+        logger.error(
+            "Webhook o'rnatilmadi — fon rejimida qayta urinib turamiz (har 60 soniyada)."
+        )
+        _webhook_task = asyncio.create_task(
+            _webhook_supervisor(app, webhook_url, secret)
+        )
+
     if not config.KEEPALIVE_DISABLED and config.KEEPALIVE_INTERVAL > 0:
         _keepalive_task = asyncio.create_task(_keepalive_loop(f"{base_url}/health"))
         logger.info(
@@ -933,12 +998,13 @@ async def _run_webhook_mode() -> None:
         await stop_event.wait()
     finally:
         logger.info("Bot to'xtatilmoqda...")
-        if _keepalive_task is not None and not _keepalive_task.done():
-            _keepalive_task.cancel()
-            try:
-                await _keepalive_task
-            except asyncio.CancelledError:
-                pass
+        for task in (_keepalive_task, _webhook_task):
+            if task is not None and not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
         # Webhook'ni o'chirmaymiz: Render xizmat qayta ishga tushsa, Telegram'da
         # webhook saqlanib qoladi va yangiliklar navbatga (pending) tushib qoladi.
         await server.stop()
