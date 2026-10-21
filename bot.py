@@ -814,6 +814,7 @@ async def _post_shutdown(app: Application) -> None:
 # Keep-alive (Render free tier uxlamasligi uchun)
 # =======================================================================
 _keepalive_task: asyncio.Task | None = None
+_webhook_task: asyncio.Task | None = None
 
 
 async def _keepalive_loop(url: str) -> None:
@@ -971,8 +972,11 @@ async def _run_webhook_mode() -> None:
             except (ValueError, OSError):
                 pass
 
-    await _initialize_with_retry(app)
+    # Render portni faqat ~5 daqiqa ichida topsa yetarli deb hisoblaydi
+    # ("No open ports detected" -> deploy timeout). Shuning uchun HTTP server
+    # Telegram/DB ulanishidan OLDIN ishga tushadi — port darhol ochiiladi.
     await server.start()
+    await _initialize_with_retry(app)
     await app.start()
 
     webhook_url = f"{base_url}{config.WEBHOOK_PATH}"
