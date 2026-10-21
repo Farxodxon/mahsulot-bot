@@ -4,3 +4,5 @@ fpdf2==2.7.9
 openpyxl==3.1.5
 psycopg[binary]==3.3.6
 psycopg-pool==3.3.0
+# Windows'da zoneinfo uchun vaqt zonasi bazasi (Linux/Render'da tizimda bor)
+tzdata==2025.2

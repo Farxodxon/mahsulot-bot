@@ -4,3 +4,4 @@ __pycache__/
 *.log
 start_bot.bat
 .env
+.bot.lock

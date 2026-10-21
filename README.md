@@ -19,16 +19,20 @@ Har bir yozuv uchun **oq-qora printerga mos katta harfli A5 PDF hujjat** chiqari
 | aiohttp | 3.14.3 (webhook uchun) |
 | fpdf2 | 2.7.9 (PDF yaratish) |
 | openpyxl | 3.1.5 (Excel yaratish) |
+| psycopg | 3.3.6 (PostgreSQL/Neon uchun, `psycopg[binary]`) |
+| psycopg-pool | 3.3.0 |
 | git | 2.55.0.windows.2 |
-| Ma'lumotlar bazasi | SQLite (fayl: `mahsulot_bot.db`) |
+| Ma'lumotlar bazasi | PostgreSQL (Neon) yoki SQLite (fayl: `mahsulot_bot.db`) |
 | Mulohaza hajmi | A5 portret (148x210 mm) |
 
 `requirements.txt` mazmuni:
 ```
-python-telegram-bot==21.6
+python-telegram-bot[webhooks]==21.6
 aiohttp==3.14.3
 fpdf2==2.7.9
 openpyxl==3.1.5
+psycopg[binary]==3.3.6
+psycopg-pool==3.3.0
 ```
 
 Diqqat: Python PATH da emas — har doim to'liq manzil bilan ishga tushiriladi yoki `start_bot.bat` orqali.
@@ -110,6 +114,50 @@ __pycache__/
 start_bot.bat
 .env
 ```
+
+---
+
+## Ma'lumotlar bazasi — PostgreSQL (Neon) va SQLite
+
+`DATABASE_URL` muhit o'zgaruvchisi bo'lsa — **PostgreSQL (Neon)**, aks holda —
+**SQLite** (`mahsulot_bot.db`) ishlatiladi. Tanlov `config.py` da
+`DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()` orqali amalga oshiriladi.
+
+### Rejimlar jadvali
+| | PostgreSQL (Neon) | SQLite |
+|---|---|---|
+| Qayerda | Render / Neon bulutda | Lokal fayl `mahsulot_bot.db` |
+| Ulanish | `DATABASE_URL` env o'zgaruvchisi | Avtomatik (fayl yo'li) |
+| Ma'lumot saqlanishi | Doimiy (deploy'da ham saqlanadi) | Faqat kompyuterda |
+| Driver | `psycopg` 3.3.6 (sinxron, `asyncio.to_thread` orqali) | `sqlite3` (standart kutubxona) |
+
+### Nima uchun sinxron driver?
+psycopg'ning async rejimi Windows'dagi `ProactorEventLoop` bilan mos emas
+("Psycopg cannot use the 'ProactorEventLoop' to run in async mode"). Shuning uchun
+sinxron `psycopg_pool.ConnectionPool` ishlatiladi, barcha so'rovlar esa
+`asyncio.to_thread` orqali worker thread'da bajariladi — event loop bloklanmaydi.
+Bu Windows va Linux (Render) uchun bir xil kod ishlaydi.
+
+### db.py dagi async API
+Barcha funksiyalar `await` bilan chaqiriladi:
+```python
+name = await db.get_worker_name(telegram_id)
+rid = await db.insert_record(...)
+rows = await db.get_records_by_ids([rid])
+```
+Qatorlar `row["category"]`, `row["date"]` kabi kalitlar orqali o'qiladi
+(Postgres'da `dict_row`, SQLite'da `sqlite3.Row`).
+
+### `init_db()` va parallel deploy
+`init_db()` jadvallarni `CREATE TABLE IF NOT EXISTS` bilan yaratadi. Bir nechta
+instance bir vaqtda ishga tushsa, Postgres'da race bo'lib `unique violation`
+xatosi chiqishi mumkin. Shuning uchun DDL `pg_advisory_lock(424242)` bilan
+serializatsiya qilinadi.
+
+### `date` ustuni
+Ikkala bazada ham `date` — **TEXT** turida, ISO formatda (`2026-09-15T08:58:08.123456`).
+Shu sababli `datetime.fromisoformat(record["date"])` ishlaydi va kunlik filtr
+(`date LIKE '2026-09-15%'`) bir xil ishlaydi.
 
 ---
 
@@ -268,12 +316,17 @@ if webhook_url:
         port=port,
         url_path=url_path,
         webhook_url=webhook_url + url_path,
-        secret_token=os.environ.get("WEBHOOK_SECRET", TELEGRAM_BOT_TOKEN),
+        secret_token=_webhook_secret(),
         allowed_updates=Update.ALL_TYPES,
     )
 ```
 - `WEBHOOK_URL` = `https://<servis-nomi>.onrender.com`
 - `secret_token` Telegram Webhook SDK tomonidan tekshiriladi (callback ekanligini tasdiqlash uchun).
+- **`secret_token` bot tokeni bo'lmaydi!** Telegram faqat `A-Z a-z 0-9 _ -` belgilarini
+  qabul qiladi, bot tokenidagi `:` esa rad etiladi
+  ("Bad Request: secret token contains illegal characters"). Shuning uchun
+  `_webhook_secret()` tokenning **SHA-256 xeshi**ni qaytaradi (64 ta hex belgi).
+  `WEBHOOK_SECRET` env o'zgaruvchisi orqali boshqa qiymat ham berilishi mumkin.
 - aiohttp 3.14.3 — PTB 21.6 webhook serveri uchun talab qilinadi.
 
 ### Render deploy qadamlar (kaļibtirilgan)

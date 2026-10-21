@@ -3,6 +3,10 @@
 #
 # TELEGRAM_BOT_TOKEN hech qachon git'ga yozilmaydi: `sync: false` — uni
 # Render dashboard'ga qo'lda kiritish kerak (Environment -> Add Environment Variable).
+#
+# Eslatma: Render web service majburiy ravishda `PORT` ga ulanishi kerak.
+# Bot `PORT` da o'z HTTP serverini qo'yadi (POST /webhook, GET /health) —
+# healthCheckPath esa shu serverga ishora qiladi.
 services:
   - type: web
     name: mahsulot-bot
@@ -10,8 +14,9 @@ services:
     plan: free
     region: frankfurt
     buildCommand: pip install -r requirements.txt
-    startCommand: python bot.py
+    startCommand: python -u bot.py
     autoDeploy: true
+    healthCheckPath: /health
     envVars:
       - key: TELEGRAM_BOT_TOKEN
         sync: false
@@ -24,3 +29,11 @@ services:
       # Render free tier 15 daqiqa faollikdan keyin uxlaydi — keep-alive yoqmaydi
       - key: KEEPALIVE_INTERVAL
         value: "300"
+      # Loglar to'g'ri ko'rinishi uchun
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      # Korxonaning vaqt zonasi (Render serveri UTC'da ishlaydi)
+      - key: TZ
+        value: Asia/Tashkent
+      - key: LOG_LEVEL
+        value: INFO
