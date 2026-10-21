@@ -13,6 +13,7 @@ Asosiy imkoniyatlar:
     - Barcha yozuvlarni Excel (.xlsx) qilib chiqarish
 """
 import asyncio
+import hashlib
 import logging
 import os
 from datetime import datetime
@@ -42,6 +43,21 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
 logger = logging.getLogger(__name__)
+
+
+class TokenMaskingFilter(logging.Filter):
+    """Loglarda bot tokenini yashiradi (httpx API URL'larida chiqib turibdi)."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        message = record.getMessage()
+        if TELEGRAM_BOT_TOKEN and TELEGRAM_BOT_TOKEN in message:
+            record.msg = message.replace(TELEGRAM_BOT_TOKEN, "***TOKEN***")
+            record.args = ()
+        return True
+
+
+logging.getLogger("httpx").addFilter(TokenMaskingFilter())
+logging.getLogger("telegram").addFilter(TokenMaskingFilter())
 
 VARIANTS_PER_PAGE = 8
 
@@ -138,7 +154,7 @@ async def _next_step(query, text: str, reply_markup=None):
 # =======================================================================
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     telegram_id = update.effective_user.id
-    name = db.get_worker_name(telegram_id)
+    name = await db.get_worker_name(telegram_id)
     if name:
         await update.message.reply_text(
             f"Salom, {name}! Nima qilamiz?", reply_markup=main_menu_keyboard()
@@ -156,7 +172,7 @@ async def receive_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     if not name:
         await update.message.reply_text("Iltimos, ismingizni kiriting:")
         return ASK_NAME
-    db.set_worker_name(update.effective_user.id, name)
+    await db.set_worker_name(update.effective_user.id, name)
     await update.message.reply_text(
         f"Rahmat, {name}! Endi tayyor bo'ldingiz.", reply_markup=main_menu_keyboard()
     )
@@ -268,7 +284,7 @@ async def receive_quantity(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         await update.message.reply_text("Iltimos, musbat butun son kiriting (masalan: 48):")
         return ENTERING_QTY
     context.user_data["quantity"] = int(text)
-    suggestions = db.get_frequent_notes(update.effective_user.id, limit=5)
+    suggestions = await db.get_frequent_notes(update.effective_user.id, limit=5)
     context.user_data["note_suggestions"] = [row["notes"] for row in suggestions]
     if suggestions:
         await update.message.reply_text(
@@ -306,9 +322,13 @@ async def _save_and_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, no
     category = PRODUCT_CATEGORIES[cat_index]["name"]
     variant = context.user_data["variant"]
     quantity = context.user_data["quantity"]
-    worker = context.user_data.get("worker") or db.get_worker_name(telegram_id) or update.effective_user.full_name
+    worker = (
+        context.user_data.get("worker")
+        or await db.get_worker_name(telegram_id)
+        or update.effective_user.full_name
+    )
 
-    record_id = db.insert_record(
+    record_id = await db.insert_record(
         telegram_id=telegram_id,
         category=category,
         variant=variant,
@@ -359,7 +379,7 @@ async def cb_pdf_single(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     await query.answer("Hujjat tayyorlanmoqda...")
     chat = query.message.chat
     record_id = int(query.data.split(":")[1])
-    rows = db.get_records_by_ids([record_id])
+    rows = await db.get_records_by_ids([record_id])
     if not rows:
         await _delete_clicked(query)
         await chat.send_message("Yozuv topilmadi.")
@@ -367,7 +387,7 @@ async def cb_pdf_single(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     record = rows[0]
     # «Yana shu mahsulotdan qo'shish» bilan to'plangan ayni partiyaning barcha
     # palletlari bitta PDF ichida chiqadi (oxirgi qo'shilgan ham kirmasdan qolmaydi).
-    batch = db.get_batch_records(
+    batch = await db.get_batch_records(
         update.effective_user.id,
         record["category"],
         record["variant"],
@@ -397,7 +417,7 @@ async def cb_today(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
     telegram_id = update.effective_user.id
-    records = db.get_today_records(telegram_id)
+    records = await db.get_today_records(telegram_id)
 
     if not records:
         await _next_step(query, "Bugun hali yozuv yo'q.", main_menu_keyboard())
@@ -427,7 +447,7 @@ async def cb_today_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await query.answer("Hujjat tayyorlanmoqda...")
     chat = query.message.chat
     telegram_id = update.effective_user.id
-    records = db.get_today_records(telegram_id)
+    records = await db.get_today_records(telegram_id)
     if not records:
         await _delete_clicked(query)
         await chat.send_message("Bugun hali yozuv yo'q.")
@@ -449,7 +469,7 @@ async def cb_export_excel(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     query = update.callback_query
     await query.answer("Excel tayyorlanmoqda...")
     chat = query.message.chat
-    records = db.get_user_records(update.effective_user.id)
+    records = await db.get_user_records(update.effective_user.id)
     if not records:
         await _delete_clicked(query)
         await chat.send_message("Hali yozuv yo'q.")
@@ -468,7 +488,7 @@ async def cb_export_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     query = update.callback_query
     await query.answer("Hujjat tayyorlanmoqda, biroz kutib turing...")
     chat = query.message.chat
-    records = db.get_user_records(update.effective_user.id)
+    records = await db.get_user_records(update.effective_user.id)
     if not records:
         await _delete_clicked(query)
         await chat.send_message("Hali yozuv yo'q.")
@@ -487,7 +507,6 @@ async def cb_export_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 # Ilova qurish
 # =======================================================================
 def build_application() -> Application:
-    db.init_db()
     app = (
         Application.builder()
         .token(TELEGRAM_BOT_TOKEN)
@@ -572,6 +591,9 @@ async def _keepalive_loop(url: str) -> None:
 
 
 async def _post_init(app: Application) -> None:
+    await db.init_db()
+    logger.info("Ma'lumotlar bazasi tayyor (%s rejimi).", "PostgreSQL" if db.USE_POSTGRES else "SQLite")
+
     global _keepalive_task
     webhook_url = os.environ.get("WEBHOOK_URL", "").strip()
     if not webhook_url:
@@ -590,6 +612,21 @@ async def _post_shutdown(app: Application) -> None:
             await _keepalive_task
         except asyncio.CancelledError:
             pass
+    await db.close_db()
+
+
+def _webhook_secret() -> str:
+    """Telegram webhook `secret_token` uchun xavfsiz qiymat.
+
+    Telegram secret_token faqat `A-Z a-z 0-9 _ -` belgilarini qabul qiladi —
+    bot tokenidagi `:` belgisi rad etiladi ("secret token contains illegal
+    characters"). Shuning uchun tokenimizdan SHA-256 xesh hosil qilinadi.
+    WEBHOOK_SECRET env o'zgaruvchisi orqali boshqa qiymat ham berilishi mumkin.
+    """
+    secret = os.environ.get("WEBHOOK_SECRET", "").strip()
+    if secret:
+        return secret
+    return hashlib.sha256(TELEGRAM_BOT_TOKEN.encode("utf-8")).hexdigest()
 
 
 def main():
@@ -606,7 +643,7 @@ def main():
             port=port,
             url_path=url_path,
             webhook_url=webhook_url + url_path,
-            secret_token=os.environ.get("WEBHOOK_SECRET", TELEGRAM_BOT_TOKEN),
+            secret_token=_webhook_secret(),
             allowed_updates=Update.ALL_TYPES,
         )
     else:
