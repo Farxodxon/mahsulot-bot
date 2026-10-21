@@ -81,12 +81,19 @@ C:\Python314\python.exe -m pip install -r requirements.txt
    - Yoki PowerShell/Prompt da:
      ```
      set TELEGRAM_BOT_TOKEN=<BOTFATHER_TOKEN>
-      C:\Python314\python.exe bot.py
+     C:\Python314\python.exe bot.py
      ```
 3. Bot telefonda ishlaydi (polling rejimida — Telegram serveriga hech qanday port ochish shart emas).
 
+> **Hozir bot Render serverida ishlayapti** (`https://mahsulot-bot.onrender.com`),
+> webhook rejimida. Lokal polling faqat ishlab chiqarish/testing uchun —
+> server ishlayotgan paytda lokal misolni ishga tushirmang (Conflict xatosi).
+> Windows'dagi `Mahsulot Telegram Bot` Task Scheduler vazifasi shu sababli o'chirilgan.
+
 ### Muhim qoida
-Bir vaqtning o'zida **faqat BIRTA** bot jarayoni ishlashi mumkin. Ikkita ishga tushsa, ikkinchisi `telegram.error.Conflict: terminated by other getUpdates request` xatosini beradi. Yangi kod qo'llanilishi uchun botni qayta ishga tushirish (eski jarayonni yopish) shart — Python import'i dastur ishga tushganda bajariladi.
+Bir vaqtning o'zida **faqat BIRTA** bot jarayoni ishlashi mumkin. Ikkita ishga tushsa, ikkinchisi `telegram.error.Conflict: terminated by other getUpdates request` xatosini beradi. Buni oldini olish uchun:
+- lokal rejimda `utils/single_instance.py` qulfi (`.bot.lock`) ishlaydi;
+- serverda webhook o'rnatilgan bo'lsa, lokal misol o'z-o'zidan ishga tushmaydi.
 
 ### To'xtatish / qayta ishga tushirish
 - Jarayonlarni ko'rish: `Get-Process python* | Select Id, StartTime`
@@ -96,12 +103,14 @@ Bir vaqtning o'zida **faqat BIRTA** bot jarayoni ishlashi mumkin. Ikkita ishga t
 ---
 
 ## Xavfsizlik — token modeli
-- Token **hech qachon git repoga yozilmaydi**. `config.py` uni faqat muhit o'zgaruvchisidan o'qiydi:
+- Token **hech qachon git repoga yozilmaydi**. `config.py` uni faqat muhit
+  o'zgaruvchisidan yoki `.env` fayldan o'qiydi:
   ```python
-  TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
+  TELEGRAM_BOT_TOKEN = _get("TELEGRAM_BOT_TOKEN")   # .env -> os.environ
   ```
-  (env o'rnatilmagan bo'lsa `KeyError` chiqadi — token qo'rmasdan bot ishga tushmasi mumkin emasligini kafolatlaydi.)
-- Lokal: token `start_bot.bat` da — va bu fayl `.gitignore` ga kiritilgan.
+  Token yo'q yoki format noto'g'ri bo'lsa, `bot.py` `_validate_token()` orqali
+  jihatdan logga yozib, `return 2` bilan to'xtaydi (token oqilmagan holda).
+- Lokal: token `.env` faylida yoki `start_bot.bat` da — bu fayllar `.gitignore` ga kiritilgan.
 - GitHub (Render) uchun: token Render sozlamalarida env var sifatida o'rnatiladi.
 - Hozirgi token README'da saqlanmaydi (faqat o'rnini bosib qo'yish uchun). U BotFather'dan olingan bo'lishi kerak; sirni saqlash kerak bo'lsa — BotFather dan qayta generatsiya qilinishi mumkin.
 
@@ -113,6 +122,7 @@ __pycache__/
 *.log
 start_bot.bat
 .env
+.bot.lock
 ```
 
 ---
@@ -298,49 +308,78 @@ Bazaga/Excelga **to'liq nom** saqlanadi; Telegram tugmalarida va PDF da qisqa ko
 
 ---
 
-## Webhook rejimi (Render'ga deploy uchun)
-Bot 2 rejimda ishlashga tayyor:
+## Webhook rejimi (Render'da ishlash)
+Bot 2 rejimda ishlaydi va `config.py` avtomatik tanlaydi:
 
-### Polling (lokal, standart)
-`WEBHOOK_URL` o'zgarmas bo'lsa → `app.run_polling(allowed_updates=Update.ALL_TYPES)`.
+| Rejim | Qachon | Nima qilinadi |
+|---|---|---|
+| **Webhook (server)** | `WEBHOOK_URL` yoki `RENDER_EXTERNAL_URL` mavjud | `server.py` dagi aiohttp serveri `PORT` ga ulanadi, Telegram webhook `POST {PUBLIC_URL}{WEBHOOK_PATH}` ga ulanadi |
+| **Polling (lokal)** | Tashqi manzil yo'q yoki `FORCE_POLLING=1` | `app.run_polling(...)` — `utils/single_instance.py` qulfi bilan |
 
-### Webhook (serverda)
-`main()`:
-```python
-webhook_url = os.environ.get("WEBHOOK_URL", "").strip()
-if webhook_url:
-    port = int(os.environ.get("PORT", "8443"))
-    url_path = os.environ.get("WEBHOOK_PATH", "/webhook")
-    app.run_webhook(
-        listen="0.0.0.0",
-        port=port,
-        url_path=url_path,
-        webhook_url=webhook_url + url_path,
-        secret_token=_webhook_secret(),
-        allowed_updates=Update.ALL_TYPES,
-    )
+### Server rejimining tuzilishi
 ```
-- `WEBHOOK_URL` = `https://<servis-nomi>.onrender.com`
-- `secret_token` Telegram Webhook SDK tomonidan tekshiriladi (callback ekanligini tasdiqlash uchun).
+bot.py main()
+ └─ _run_webhook_mode()
+     ├─ server.start()        # PORT darhol ochiqiladi (Render port skani 1 soniyada)
+     ├─ _initialize_with_retry()  # Telegram + DB ulanishi (5 urinish, timeout 30 s)
+     ├─ app.start()           # update navbati
+     ├─ _set_webhook_with_retry()  # Telegram'da webhook (SHA-256 secret bilan)
+     └─ _webhook_supervisor()  # webhook o'rnatilmagan bo'lsa — har 60 s qayta urinadi
+```
+
+Endpointlar:
+- `POST /webhook` — Telegram yangiliklari (`X-Telegram-Bot-Api-Secret-Token` sarlavhasi tekshiriladi, mos kelmasa `403`).
+- `GET /health` — Render health check, `{"status":"ok","uptime_seconds":…,"database":"ok"}`.
+- `GET /` — qisqa holat.
+
+Muhim qoidalar:
 - **`secret_token` bot tokeni bo'lmaydi!** Telegram faqat `A-Z a-z 0-9 _ -` belgilarini
   qabul qiladi, bot tokenidagi `:` esa rad etiladi
   ("Bad Request: secret token contains illegal characters"). Shuning uchun
   `_webhook_secret()` tokenning **SHA-256 xeshi**ni qaytaradi (64 ta hex belgi).
   `WEBHOOK_SECRET` env o'zgaruvchisi orqali boshqa qiymat ham berilishi mumkin.
-- aiohttp 3.14.3 — PTB 21.6 webhook serveri uchun talab qilinadi.
+- **Port Telegram/DB ulanishidan OLDIN ochiladi.** Aks holda Render 15 daqiqa port
+  skan qilib "No open ports detected" xatosi beradi va deploy timeout bo'ladi.
+- **Webhook'ni o'chirilmaydi** (xizmat to'xtatilganda ham) — yangiliklar Telegram
+  navbatida (`pending_update_count`) saqlanib, keyingi startda yetib boradi.
+- `TZ=Asia/Tashkent` — Render UTC'da ishlaydi, "bugungi yozuvlar" UTC+5 bo'lishi kerak.
+- Keep-alive (`KEEPALIVE_INTERVAL=300`) — free tier 15 daqiqa faollikdan keyin
+  uxlaydi; bot o'z `/health` manziliga so'rov yuborib uni uyg'otib turadi.
 
-### Render deploy qadamlar (kaļibtirilgan)
-1. GitHub repoga push (bu bajarilgan).
-2. Render.com → New Web Service → repo tanlash.
-3. Build: `pip install -r requirements.txt`
-4. Start: `python bot.py`
-5. Free tier.
-6. Env var:
-   - `TELEGRAM_BOT_TOKEN=<BOTFATHER_TOKEN>`
-   - `WEBHOOK_URL=https://<servis-nomi>.onrender.com`
-7. Deploy.
+### Render deploy qadamlari
+1. GitHub repoga push (`master`).
+2. Render.com → Web Service → repo tanlash (yoki Blueprint orqali `render.yaml`).
+3. Build: `pip install -r requirements.txt` · Start: `python -u bot.py` · Free tier.
+4. Environment Variables:
+   - `TELEGRAM_BOT_TOKEN=<BOTFATHER_TOKEN>` (majburiy)
+   - `DATABASE_URL=postgresql://...` (Neon — ixtiyoriy, bo'lmasa SQLite)
+   - `WEBHOOK_URL=https://mahsulot-bot.onrender.com` (ixtiyoriy — `RENDER_EXTERNAL_URL`
+     avtomatik beriladi, shuning uchun `config.PUBLIC_URL` o'zi topadi)
+   - `TZ=Asia/Tashkent`, `KEEPALIVE_INTERVAL=300`, `LOG_LEVEL=INFO`
+5. Deploy. Tekshirish: `https://mahsulot-bot.onrender.com/health` → `{"status":"ok"}`.
 
-Muhim: webhook rejimida baza Render fayl tizimida — **har deploy da tozalanadi**. Yozuvlar uzoq muddat saqlanishi uchun Postgres/Neon migratsiya qilish tavsiya. Bunday holda `insert_record` dan keyin yaqqol ko'rinadigan boshqa boshqa serveriga o'tkazish kerak.
+### Konflikt (ikki misol)dan himoya
+- `utils/single_instance.py` — lokal polling `.bot.lock` fayli bilan bitta misolga
+  cheklangan.
+- `bot.py` lokal polling boshlanishidan oldin `getWebhookInfo()` bilan tekshiradi:
+  agar serverda webhook o'rnatilgan bo'lsa, **lokal misol ishga tushmaydi**
+  (`ALLOW_WEBHOOK_TAKEOVER=1` bo'lmasa) — aks holda u webhook'ni o'chirib,
+  serverdagi yangiliklarni to'xtatib qo'yardi.
+- Windows'da `Mahsulot Telegram Bot` nomli Task Scheduler vazifasi **o'chirilgan**:
+  bot endi faqat Render'da ishlaydi.
+
+### Baza Render'da
+Render fayl tizimi har deploy'da tozalanadi, shuning uchun `DATABASE_URL`
+(Neon PostgreSQL) berilishi shart. `DATABASE_URL` bo'lmasa bot SQLite'ga
+tushadi va ma'lumotlar deploy'dan keyin yo'qoladi. Neon ulanmasa
+`DB_FALLBACK_TO_SQLITE=1` (default) orqali SQLite rejimiga o'tadi.
+
+### Tekshiruv skripti
+```
+python selfcheck.py              # importlar, DB (SQLite), PDF/Excel, vaqt, webhook server
+python selfcheck.py --postgres   # Neon/PostgreSQL ulanishi bilan
+```
+
 
 ---
 
@@ -363,6 +402,10 @@ Funksiy oilamiz `main()` da faqat polling rejimida kerak; u webhook rejimida ham
 - Commit'lar:
   - `211b499` (2026-09-11) — Boshlang'ich: suhbat ssenariysi, PDF/Excel eksport, webhook tayyorgarligi, 14 fayl / 949 qator.
   - `81e5d74` — SUPER BLOND, ULTRA BLOND, Экстра Lock On alohida kategoriyalarga; bitta variantli kategoriyalar variant bosqichini skip qiladi.
+  - `c1c6885` — Neon PostgreSQL'ga o'tish (dual-mode DB qatlami).
+  - `e60ce12` — Webhook/server rejimi: aiohttp server, single-instance lock, Asia/Tashkent, DB retry + SQLite fallback, `selfcheck.py`.
+  - `8291894` — Telegram API timeoutlari (30 s) va initialize/webhook qayta urinishlari.
+  - `c791cb4` — HTTP server Telegram/DB ulanishidan OLDIN ishga tushadi ("No open ports detected" xatosi yo'qoladi).
 - Token repoda TOPILMADI (tekshirilgan) — xavfsiz.
 
 Komanda'lar:
@@ -376,14 +419,13 @@ git push
 ---
 
 ## Konsol / logslash muhim
-- Ushbu Windows'da PowerShell konsol kodlash cp1252 — Rus/Cyrillic `print()` chiqarishda `UnicodeEncodeError` berishi mumkin. Debug uchun faylga UTF-8 yozish afzal (masalan `io.open(..., encoding='utf-8')`).
-- Bot logları: `logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)` — stderr ga chiqadi. `Start-Process -RedirectStandardError` bilan faylga olinadi.
+- Ushbu Windows'da PowerShell konsol kodlash cp1252 — Rus/Cyrillic `print()` chiqarishda `UnicodeEncodeError` berishi mumkin. `bot.py` va `selfcheck.py` chiqishni UTF-8 ga o'tkazadi (`reconfigure(encoding="utf-8", errors="replace")`).
+- Bot loglari: `bot.log` faylida (UTF-8) + stdout/stderr. Render'da loglar `stdout` orqali ko'rinadi.
 
 ---
 
 ## Bo'lajak takliflar
 - Yozuv tahrir/o'chirish interfeysi.
-- Tashqi DB (Neon Postgres) — deplоy toza bo'lmasa saqlanish.
-- Kategoriya/pодуктlarini bazadan boshqarish (admin).
+- Kategoriya/pдуктlarini bazadan boshqarish (admin).
 - Bitta xodimga bir nechta ish kunlarini tanlash.
 - PDF da barcode/QR kod.
